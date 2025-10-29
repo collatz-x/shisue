@@ -110,6 +110,7 @@ class DataConfig:
     horizontal_flip_prob: float = 0.5
     vertical_flip_prob: float = 0.5
     rotation_limit: int = 15
+    rotation_prob: float = 0.5
 
     # Normalization
     normalize: bool = True

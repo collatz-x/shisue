@@ -24,6 +24,7 @@ use_augmentation: true
 horizontal_flip_prob: 0.5
 vertical_flip_prob: 0.5
 rotation_limit: 15
+rotation_prob: 0.5
 
 # Normalization
 normalize: true

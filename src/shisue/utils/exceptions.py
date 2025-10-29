@@ -1,7 +1,7 @@
 from typing import Optional
 
 
-class MRIScanSegmentationException(Exception):
+class MRIScanException(Exception):
     '''Base exception for all all MRI Scan Segmentation errors.'''
     def __init__(self, message: str, details: Optional[str] = None):
         '''
