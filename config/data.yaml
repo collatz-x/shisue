@@ -1,0 +1,34 @@
+# Data pipeline configuration
+
+# Data paths
+data_dir: data
+images_dir: data/images
+masks_dir: data/masks
+
+# Dataset splits
+train_split: 0.70
+val_split: 0.15
+test_split: 0.15
+
+# Data properties
+image_size: 224
+num_classes: 9
+
+# Data loading
+batch_size: 8
+num_workers: 0
+pin_memory: false
+
+# Augmentation
+use_augmentation: true
+horizontal_flip_prob: 0.5
+vertical_flip_prob: 0.5
+rotation_limit: 15
+
+# Normalization
+normalize: true
+mean: null
+std: null
+
+# Random seed
+seed: 42

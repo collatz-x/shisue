@@ -1,0 +1,30 @@
+[project]
+name = "shisue"
+version = "0.1.0"
+description = "Semantic Segmentation of Medical MRI Scans with TransUNet"
+readme = "README.md"
+authors = [
+    { name = "collatz-x", email = "collatz.x@proton.me" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "albumentations>=2.0.8",
+    "hydra-core>=1.3.2",
+    "ipykernel>=7.0.1",
+    "matplotlib>=3.10.7",
+    "numpy>=2.3.4",
+    "pillow>=12.0.0",
+    "scikit-learn>=1.7.2",
+    "seaborn>=0.13.2",
+    "tensorboard>=2.20.0",
+    "torch>=2.9.0",
+    "torchvision>=0.24.0",
+    "tqdm>=4.67.1",
+]
+
+[project.scripts]
+shisue = "shisue:main"
+
+[build-system]
+requires = ["uv_build>=0.9.0,<0.10.0"]
+build-backend = "uv_build"
