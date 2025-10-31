@@ -4,10 +4,8 @@ model_name: R50-ViT-B16
 
 # Patch settings
 patches:
-  size: [16, 16]
-  grid: [16, 16]
-
-patch_size: 16
+  size: (1, 1)
+  grid: (14, 14)
 
 # Transformer settings
 hidden_size: 768
@@ -30,11 +28,11 @@ skip_channels: [512, 256, 64, 16]
 n_skip: 3
 
 # Output settings
-n_classes: 2
+n_classes: 9
 activation: softmax
 
 # Pretrained weights
-pretrained_path: null
+transformer_pretrained_path: null
 resnet_pretrained_path: null
 
 # Other settings
