@@ -125,6 +125,7 @@ class OptimizerConfig:
     lr: float = 0.01
     momentum: float = 0.9
     weight_decay: float = 0.0001
+    betas: Tuple[float, float] = (0.9, 0.999)
 
 
 @dataclass
@@ -133,6 +134,8 @@ class SchedulerConfig:
     
     name: str = 'polynomial'
     power: float = 0.9
+    step_size: int = 30
+    gamma: float = 0.1
 
 
 @dataclass
@@ -144,13 +147,24 @@ class TrainingConfig:
     early_stopping_patience: int = 20
 
     # Optimizer and scheduler
-    optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
-    scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+    optimizer: OptimizerConfig = field(
+        default_factory=OptimizerConfig
+    )
+    scheduler: SchedulerConfig = field(
+        default_factory=SchedulerConfig
+    )
 
     # Loss function
-    loss_type: str = 'combined'     # 'dice', 'ce', 'combined'
+    num_classes: int = 9
+    loss_type: str = 'combined'             # 'dice', 'ce', 'combined'
     dice_weight: float = 0.5
     ce_weight: float = 0.5
+    ignore_index: Optional[int] = None      # Class index to ignore in loss computation (e.g., background)
+    smooth: float = 1.0                     # Smoothing factor for Dice loss
+    label_smoothing: float = 0.0            # Label smoothing factor for Cross-Entropy loss
+
+    # Metric parameters
+    epsilon: float = 1e-7                   # Small constant to avoid division by zero in metrics computation
 
     # Training settings
     use_amp: bool = True

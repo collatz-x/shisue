@@ -4,8 +4,8 @@ model_name: R50-ViT-B16
 
 # Patch settings
 patches:
-  size: (1, 1)
-  grid: (14, 14)
+  size: [1, 1]
+  grid: [14, 14]
 
 # Transformer settings
 hidden_size: 768
