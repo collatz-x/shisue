@@ -196,6 +196,9 @@ cython_debug/
 # IDE stuff
 .cursor/
 
-# Dataset
-data/images
-data/masks
+# Project folders
+/data/
+/experiments/
+/logs/
+/models/
+/tests/

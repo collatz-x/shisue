@@ -113,7 +113,6 @@ def create_data_split(
     images_dir: Path,
     masks_dir: Path,
     config: Optional[DataConfig] = None,
-    stratify: bool = True,
     extension: str = 'png'
 ) -> Dict[str, List[str]]:
     '''
@@ -123,7 +122,6 @@ def create_data_split(
         images_dir: Directory containing image files
         masks_dir: Directory containing mask files
         config: DataConfig object with split ratios and seed
-        stratify: Whether to stratify the split based on class presence
         extension: File extension to match
 
     Returns:
@@ -145,7 +143,7 @@ def create_data_split(
 
     # Compute stratification labels if needed
     stratify_labels = None
-    if stratify:
+    if config.stratify:
         mask_paths = [Path(masks_dir) / f for f in filenames]
         stratify_labels = compute_stratification_labels(mask_paths, config.num_classes)
 
@@ -153,10 +151,10 @@ def create_data_split(
     # Stratify labels are only used for stratification, not ground truth labels
     train_val_files, test_files, train_val_labels, _ = train_test_split(
         filenames,
-        stratify_labels if stratify else None,
+        stratify_labels if config.stratify else None,
         test_size=config.test_split,
         random_state=config.seed,
-        stratify=stratify_labels if stratify else None
+        stratify=stratify_labels if config.stratify else None
     )
 
     # Second split: train and validation set
@@ -167,7 +165,7 @@ def create_data_split(
         train_val_files,
         test_size=val_ratio_adj,
         random_state=config.seed,
-        stratify=train_val_labels if stratify else None
+        stratify=train_val_labels if config.stratify else None
     )
 
     split_dict = {
@@ -239,8 +237,6 @@ def get_or_create_split(
     masks_dir: Path,
     split_path: Optional[Path] = None,
     config: Optional[DataConfig] = None,
-    stratify: bool = True,
-    force_recreate: bool = False
 ) -> Dict[str, List[str]]:
     '''
     Load existing split or create new one if it doesn't exist.
@@ -252,26 +248,24 @@ def get_or_create_split(
         masks_dir: Directory containing mask files
         split_path: Path to JSON file containing the dataset split (if None, create split without saving)
         config: DataConfig object with split ratios and seed
-        stratify: Whether to stratify the split based on class presence
-        force_recreate: If True, recreate split even if file exists
 
     Returns:
         Dictionary with 'train', 'val', 'test' keys containing filenames
     '''
     if split_path is None:
         logger.info(f"No split path provided, creating split without saving")
-        return create_data_split(images_dir, masks_dir, config, stratify)
+        return create_data_split(images_dir, masks_dir, config)
 
     split_path = Path(split_path)
 
     # Load existing split if available
-    if split_path.exists() and not force_recreate:
+    if split_path.exists() and not config.force_recreate:
         logger.info(f"Loading existing split from {split_path}")
         return load_split(split_path)
 
     # Create new split
     logger.info(f"Creating new dataset split...")
-    split_dict = create_data_split(images_dir, masks_dir, config, stratify)
+    split_dict = create_data_split(images_dir, masks_dir, config)
 
     # Save split for future use
     save_split(split_dict, split_path)

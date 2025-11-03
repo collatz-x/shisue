@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from typing import List, Tuple
 
 import torch
@@ -166,14 +167,14 @@ class ResNetV2(nn.Module):
 
     Architecture:
     - Root block: 7x7 conv (224 -> 112) + 3x3 maxpool (112 -> 56)
-    - Stage 1: n_blocks at 56x56 with 64 channels
-    - Stage 2: n_blocks at 28x28 with 128 channels
-    - Stage 3: n_blocks at 14x14 with 256 channels
+    - Block 1: n_blocks at 56x56 with 64 channels
+    - Block 2: n_blocks at 28x28 with 128 channels
+    - Block 3: n_blocks at 14x14 with 256 channels
     - Output: 14x14 feature map + skip connections
 
     Attributes:
         root: Initial convolution and pooling
-        stage1, stage2, stage3: ResNet stages
+        block1, block2, block3: ResNet blocks
         norm: Final normalization layer
     '''
 
@@ -202,46 +203,46 @@ class ResNetV2(nn.Module):
         # Root block: initial convolution and pooling
         # Conv: (B, 3, 224, 224) -> (B, 64*width_factor, 112, 112)
         # MaxPool: (B, 64*width_factor, 112, 112) -> (B, 64*width_factor, 56, 56)
-        self.root = nn.Sequential(
-            StdConv2d(
+        self.root = nn.Sequential(OrderedDict([
+            ('conv', StdConv2d(
                 in_channels=3,
                 out_channels=channels[0],
                 kernel_size=7,
                 stride=2,
                 padding=3,
                 bias=False
-            ),
-            nn.GroupNorm(num_groups=min(32, channels[0]), num_channels=channels[0]),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        )
+            )),
+            ('gn', nn.GroupNorm(num_groups=min(32, channels[0]), num_channels=channels[0])),
+            ('relu', nn.ReLU(inplace=True)),
+            ('maxpool', nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+        ]))
 
-        # Stage 1: 56x56 -> 56x56
-        # Output channels: 64 * 4 = 256
-        self.stage1 = self._make_stage(
-            in_channels=channels[0],
-            mid_channels=channels[0],
-            num_blocks=num_layers[0],
-            stride=1
-        )
-
-        # Stage 2: 56x56 -> 28x28
-        # Output channels: 128 * 4 = 512
-        self.stage2 = self._make_stage(
-            in_channels=channels[0] * BottleneckV2.EXPANSION,
-            mid_channels=channels[1],
-            num_blocks=num_layers[1],
-            stride=2
-        )
-
-        # Stage 3: 28x28 -> 14x14
-        # Output channels: 256 * 4 = 1024
-        self.stage3 = self._make_stage(
-            in_channels=channels[1] * BottleneckV2.EXPANSION,
-            mid_channels=channels[2],
-            num_blocks=num_layers[2],
-            stride=2
-        )
+        self.body = nn.Sequential(OrderedDict([
+            # Block 1: 56x56 -> 56x56
+            # Output channels: 64 * 4 = 256
+            ('block1', self._make_stage(
+                in_channels=channels[0],
+                mid_channels=channels[0],
+                num_blocks=num_layers[0],
+                stride=1
+            )),
+            # Block 2: 56x56 -> 28x28
+            # Output channels: 128 * 4 = 512
+            ('block2', self._make_stage(
+                in_channels=channels[0] * BottleneckV2.EXPANSION,
+                mid_channels=channels[1],
+                num_blocks=num_layers[1],
+                stride=2
+            )),
+            # Block 3: 28x28 -> 14x14
+            # Output channels: 256 * 4 = 1024
+            ('block3', self._make_stage(
+                in_channels=channels[1] * BottleneckV2.EXPANSION,
+                mid_channels=channels[2],
+                num_blocks=num_layers[2],
+                stride=2
+            ))
+        ]))
 
         # Final normalization (pre-activation style)
         final_channels = channels[2] * BottleneckV2.EXPANSION
@@ -305,21 +306,21 @@ class ResNetV2(nn.Module):
             Tuple of:
                 - Final feature map of shape (B, 1024, 14, 14)
                 - List of skip connection features from each stage:
-                    [stage1: (B, 256, 56, 56),
-                     stage2: (B, 512, 28, 28),
-                     stage3: (B, 1024, 14, 14)]
+                    [block1: (B, 256, 56, 56),
+                     block2: (B, 512, 28, 28),
+                     block3: (B, 1024, 14, 14)]
         '''
         # Root block: 224 -> 112 -> 56
-        x = self.root(x)        # (B, 64, 56, 56)
+        x = self.root(x)            # (B, 64, 56, 56)
 
-        # Stage 1: 56 -> 56
-        x1 = self.stage1(x)     # (B, 256, 56, 56)
+        # Block 1: 56 -> 56
+        x1 = self.body.block1(x)    # (B, 256, 56, 56)
 
-        # Stage 2: 56 -> 28
-        x2 = self.stage2(x1)    # (B, 512, 28, 28)
+        # Block 2: 56 -> 28
+        x2 = self.body.block2(x1)   # (B, 512, 28, 28)
 
-        # Stage 3: 28 -> 14
-        x3 = self.stage3(x2)    # (B, 1024, 14, 14)
+        # Block 3: 28 -> 14
+        x3 = self.body.block3(x2)   # (B, 1024, 14, 14)
 
         # Final normalization and activation
         x_out = self.norm(x3)

@@ -152,7 +152,7 @@ class PatchEmbeddings(nn.Module):
 
     def __init__(self, patch_size: Tuple[int, int], in_channels: int, hidden_size: int):
         '''
-        Initialize patch embedding.
+        Initialize patch embeddings.
 
         Args:
             patch_size: Size of each extracted patch (height, width)
@@ -205,7 +205,7 @@ class PatchEmbeddings(nn.Module):
         return embeddings
 
 
-class PositionalEmbedding(nn.Module):
+class PositionalEmbeddings(nn.Module):
     '''
     Learnable positional embeddings for transformer.
 
@@ -215,12 +215,12 @@ class PositionalEmbedding(nn.Module):
     Attributes:
         num_patches: Number of spatial patches
         hidden_size: Dimension of embedding vectors
-        positional_embedding: Learnable embeddings for each patch position
+        positional_embeddings: Learnable embeddings for each patch position
     '''
 
     def __init__(self, num_patches: int, hidden_size: int):
         '''
-        Initialize positional embedding.
+        Initialize positional embeddings.
 
         Args:
             num_patches: Number of patches from the feature map
@@ -232,10 +232,10 @@ class PositionalEmbedding(nn.Module):
         self.hidden_size = hidden_size
 
         # Learnable positional embeddings
-        self.positional_embedding = nn.Parameter(torch.zeros(1, num_patches, hidden_size))
+        self.positional_embeddings = nn.Parameter(torch.zeros(1, num_patches, hidden_size))
 
         # Initialize with truncated normal distribution
-        nn.init.trunc_normal_(self.positional_embedding, std=0.02)
+        nn.init.trunc_normal_(self.positional_embeddings, std=0.02)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         '''
@@ -247,7 +247,7 @@ class PositionalEmbedding(nn.Module):
         Returns:
             Embeddings with positional encoding of shape (B, num_patches, hidden_size)
         '''
-        return x + self.positional_embedding
+        return x + self.positional_embeddings
 
 
 class MultiHeadSelfAttention(nn.Module):

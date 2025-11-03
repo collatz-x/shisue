@@ -1,0 +1,16 @@
+# Main configuration file for TransUNet training
+# Composes model, data, and training configurations
+
+defaults:
+  - model
+  - data
+  - training
+  - _self_
+  - override hydra/job_logging: none
+
+# Hydra configuration
+hydra:
+  run:
+    dir: experiments/runs/${now:%Y%m%d_%H%M%S}
+  job:
+    chdir: false  # Don't change working directory

@@ -149,19 +149,6 @@ def get_validation_transform(config: Optional[DataConfig] = None) -> Callable:
     return transform
 
 
-def get_test_transform(config: Optional[DataConfig] = None) -> Callable:
-    '''
-    Get test transformation pipeline (same as validation).
-
-    Args:
-        config: DataConfig object with transformation parameters
-
-    Returns:
-        Albumentations Compose transform
-    '''
-    return get_validation_transform(config)
-
-
 def get_transform(mode: str, config: Optional[DataConfig] = None) -> Callable:
     '''
     Get transformation pipeline based on dataset mode.

@@ -5,7 +5,7 @@ import torch.nn as nn
 
 from shisue.models.components import (
     PatchEmbeddings,
-    PositionalEmbedding,
+    PositionalEmbeddings,
     TransformerBlock
 )
 from shisue.utils.config import ModelConfig
@@ -75,7 +75,7 @@ class Transformer(nn.Module):
         )
 
         # Positional embeddings for spatial positions
-        self.positional_embeddings = PositionalEmbedding(
+        self.positional_embeddings = PositionalEmbeddings(
             num_patches=num_patches,
             hidden_size=self.hidden_size
         )

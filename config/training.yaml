@@ -1,56 +1,58 @@
 # Training configuration
 
-# Training duration
-epochs: 150
-early_stopping_patience: 20
+training:
+  # Training duration
+  epochs: 150
+  early_stopping_patience: 20
 
-# Optimizer
-optimizer:
-  name: sgd                                 # sgd, adam, adamw
-  lr: 0.01
-  momentum: 0.9                             # Only used for SGD optimizer
-  weight_decay: 0.0001
-  betas: [0.9, 0.999]                       # Only used for Adam and AdamW optimizers
+  # Optimizer
+  optimizer:
+    name: sgd                                 # sgd, adam, adamw
+    lr: 0.01
+    momentum: 0.9                             # Only used for SGD optimizer
+    weight_decay: 0.0001
+    betas: [0.9, 0.999]                       # Only used for Adam and AdamW optimizers
 
-# Scheduler
-scheduler:
-  name: polynomial                          # polynomial, cosine, step
-  power: 0.9                                # Only used for polynomial scheduler
-  step_size: 30                             # Only used for step scheduler
-  gamma: 0.1                                # Only used for step scheduler
+  # Scheduler
+  scheduler:
+    name: polynomial                          # polynomial, cosine, step
+    power: 0.9                                # Only used for polynomial scheduler
+    step_size: 30                             # Only used for step scheduler
+    gamma: 0.1                                # Only used for step scheduler
 
-# Loss function
-num_classes: 9
-loss_type: combined
-dice_weight: 0.5
-ce_weight: 0.5
-ignore_index: null
-smooth: 1.0
-label_smoothing: 0.0
+  # Loss function
+  num_classes: 9
+  loss_type: combined                         # 'dice', 'ce', 'combined'
+  dice_weight: 0.5
+  ce_weight: 0.5
+  ignore_index: null                          # Class index to ignore in loss computation (e.g., background)
+  smooth: 1.0                                 # Smoothing factor for Dice loss
+  label_smoothing: 0.0                        # Label smoothing factor for Cross-Entropy loss
+  use_class_weights: false                    # Whether to use class weights for loss computation in imbalanced datasets
 
-# Metric parameters
-epsilon: 1e-7
+  # Metric parameters
+  epsilon: 1e-7                               # Small constant to avoid division by zero in metrics computation
 
-# Training settings
-use_amp: true
-gradient_clip_val: 1.0
+  # Training settings
+  use_amp: true
+  gradient_clip_val: 1.0
 
-# Checkpointing
-save_every_n_epochs: 50
-save_best: true
-save_last: true
+  # Checkpointing
+  save_every_n_epochs: 50
+  save_best: true
+  save_last: true
 
-# Validation
-val_every_n_epochs: 1
+  # Validation
+  val_every_n_epochs: 1
 
-# Paths
-checkpoint_dir: experiments/checkpoints
-log_dir: logs
-tensorboard_dir: experiments/runs
+  # Paths (using Hydra interpolation for experiment-specific outputs)
+  checkpoint_dir: ${hydra:runtime.output_dir}/checkpoints
+  log_dir: logs
+  tensorboard_dir: ${hydra:runtime.output_dir}/tensorboard
 
-# Resume training
-resume_from_checkpoint: null
+  # Resume training
+  resume_from_checkpoint: null
 
-# Random seed
-seed: 42
-deterministic: true
+  # Random seed
+  seed: 42
+  deterministic: true

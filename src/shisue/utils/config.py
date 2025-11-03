@@ -48,7 +48,7 @@ class ModelConfig:
 
     # Decoder settings
     decoder_channels: Tuple[int, int, int, int] = (256, 128, 64, 16)
-    skip_channels: List[int] = field(default_factory=lambda: [512, 256, 64, 16])
+    skip_channels: List[int] = field(default_factory=lambda: [256, 512, 1024])
     n_skip: int = 3
 
     # Output settings
@@ -56,8 +56,7 @@ class ModelConfig:
     activation: str = 'softmax'
 
     # Pretrained weights
-    transformer_pretrained_path: Optional[str] = None
-    resnet_pretrained_path: Optional[str] = None
+    pretrained_path: Optional[str] = None
 
     # Other settings
     classifier: str = 'seg'
@@ -91,6 +90,8 @@ class DataConfig:
     train_split: float = 0.70
     val_split: float = 0.15
     test_split: float = 0.15
+    stratify: bool = True
+    force_recreate: bool = False
 
     # Data properties
     image_size: int = 224
@@ -121,21 +122,21 @@ class DataConfig:
 class OptimizerConfig:
     '''Optimizer configuration.'''
     
-    name: str = 'sgd'
+    name: str = 'sgd'                           # sgd, adam, adamw
     lr: float = 0.01
-    momentum: float = 0.9
+    momentum: float = 0.9                       # Only used for SGD optimizer
     weight_decay: float = 0.0001
-    betas: Tuple[float, float] = (0.9, 0.999)
+    betas: Tuple[float, float] = (0.9, 0.999)   # Only used for Adam and AdamW optimizers
 
 
 @dataclass
 class SchedulerConfig:
     '''Learning rate scheduler configuration.'''
     
-    name: str = 'polynomial'
-    power: float = 0.9
-    step_size: int = 30
-    gamma: float = 0.1
+    name: str = 'polynomial'                  # polynomial, cosine, step
+    power: float = 0.9                        # Only used for polynomial scheduler
+    step_size: int = 30                       # Only used for step scheduler
+    gamma: float = 0.1                        # Only used for step scheduler
 
 
 @dataclass
@@ -156,15 +157,16 @@ class TrainingConfig:
 
     # Loss function
     num_classes: int = 9
-    loss_type: str = 'combined'             # 'dice', 'ce', 'combined'
+    loss_type: str = 'combined'                 # 'dice', 'ce', 'combined'
     dice_weight: float = 0.5
     ce_weight: float = 0.5
-    ignore_index: Optional[int] = None      # Class index to ignore in loss computation (e.g., background)
-    smooth: float = 1.0                     # Smoothing factor for Dice loss
-    label_smoothing: float = 0.0            # Label smoothing factor for Cross-Entropy loss
+    ignore_index: Optional[int] = None          # Class index to ignore in loss computation (e.g., background)
+    smooth: float = 1.0                         # Smoothing factor for Dice loss
+    label_smoothing: float = 0.0                # Label smoothing factor for Cross-Entropy loss
+    use_class_weights: bool = False             # Whether to use class weights for loss computation in imbalanced datasets
 
     # Metric parameters
-    epsilon: float = 1e-7                   # Small constant to avoid division by zero in metrics computation
+    epsilon: float = 1e-7                       # Small constant to avoid division by zero in metrics computation
 
     # Training settings
     use_amp: bool = True

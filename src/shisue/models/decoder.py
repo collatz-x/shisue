@@ -106,11 +106,12 @@ class DecoderCUP(nn.Module):
 
     Architecture:
     - Input: Transformer features (B, 768, 14, 14)
-    - Stage 0: Project to decoder channels + fuse skip3 -> (B, 256, 14, 14)
-    - Stage 1: Upsample + fuse skip2 -> (B, 128, 28, 28)
-    - Stage 2: Upsample + fuse skip1 -> (B, 64, 56, 56)
-    - Stage 3: Upsample (no skip) -> (B, 16, 112, 112)
-    - Final: Upsample to 224x224 + segmentation head -> (B, 16, 224, 224)
+    - conv_more: Project to decoder channels (B, 256, 14, 14)
+    - Stage 0: Fuse skip3 + upsample -> (B, 128, 28, 28)
+    - Stage 1: Fuse skip2 + upsample -> (B, 64, 56, 56)
+    - Stage 2: Fuse skip1 + upsample -> (B, 32, 112, 112)
+    - Stage 3: No skip + upsample -> (B, 16, 224, 224)
+    - Segmentation head: 1x1 conv to n_classes -> (B, n_classes, 224, 224)
 
     Attributes:
         conv_more: Initial projection from transformer channels
@@ -174,12 +175,6 @@ class DecoderCUP(nn.Module):
                 )
             )
 
-        # Final upsampling to 224x224
-        self.final_upsample = UpConvBlock(
-            in_channels=decoder_channels[-1],
-            out_channels=decoder_channels[-1]
-        )
-
         # Segmentation head: 1x1 conv to n_classes
         self.segmentation_head = nn.Conv2d(
             decoder_channels[-1],
@@ -214,9 +209,6 @@ class DecoderCUP(nn.Module):
         for i, decoder_block in enumerate(self.decoder_blocks):
             skip = skip_reversed[i] if i < len(skip_reversed) else None
             x = decoder_block(x, skip)
-
-        # Final upsampling: 112x112 -> 224x224
-        x = self.final_upsample(x)
 
         # Segmentation head: (B, 16, 224, 224) -> (B, n_classes, 224, 224)
         logits = self.segmentation_head(x)
