@@ -166,6 +166,9 @@ def compute_class_weights_from_split(split_dict: dict, images_dir: Path, masks_d
         # Normalize weights to have mean = 1.0
         class_weights = class_weights / class_weights.mean()
 
+        # Convert class weights to float32 for MPS compatibility
+        class_weights = class_weights.float()
+
         logger.info(f"Class distribution (pixels): {class_counts.tolist()}")
         logger.info(f"Computed class weights: {class_weights.tolist()}")
         
@@ -252,7 +255,8 @@ def main(cfg: DictConfig):
         config=config.training,
         train_loader=train_loader,
         val_loader=val_loader,
-        class_weights=class_weights
+        class_weights=class_weights,
+        class_names=config.data.class_names
     )
 
     # Start training

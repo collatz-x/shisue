@@ -13,15 +13,16 @@ from shisue.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-class BottleneckV2(nn.Module):
+class Bottleneck(nn.Module):
     '''
-    ResNetv2 bottleneck block with pre-activation design.
+    ResNet bottleneck block with post-activation design.
 
     Architecture:
-    - GroupNorm + ReLU + Conv1x1 (reduce channels)
-    - GroupNorm + ReLU + Conv3x3 (spatial processing)
-    - GroupNorm + ReLU + Conv1x1 (expand channels)
-    - Residual connection (with projection if needed)
+    - Conv1x1 + GroupNorm + ReLU (reduce channels)
+    - Conv3x3 + GroupNorm + ReLU (spatial processing)
+    - Conv1x1 + GroupNorm (expand channels)
+    - Add residual connection
+    - ReLU activation
 
     Attributes:
         in_channels: Number of input channels
@@ -46,9 +47,7 @@ class BottleneckV2(nn.Module):
 
         out_channels = mid_channels * self.EXPANSION
 
-        # Pre-activation for conv1
-        self.norm1 = self._make_norm(in_channels, num_groups)
-        self.relu1 = nn.ReLU(inplace=True)
+        # conv1 -> norm1 -> relu1
         self.conv1 = StdConv2d(
             in_channels,
             mid_channels,
@@ -57,10 +56,10 @@ class BottleneckV2(nn.Module):
             padding=0,
             bias=False
         )
+        self.norm1 = self._make_norm(mid_channels, num_groups)
+        self.relu1 = nn.ReLU(inplace=True)
 
-        # Pre-activation for conv2
-        self.norm2 = self._make_norm(mid_channels, num_groups)
-        self.relu2 = nn.ReLU(inplace=True)
+        # conv2 -> norm2 -> relu2
         self.conv2 = StdConv2d(
             mid_channels,
             mid_channels,
@@ -69,10 +68,10 @@ class BottleneckV2(nn.Module):
             padding=1,
             bias=False
         )
+        self.norm2 = self._make_norm(mid_channels, num_groups)
+        self.relu2 = nn.ReLU(inplace=True)
 
-        # Pre-activation for conv3
-        self.norm3 = self._make_norm(mid_channels, num_groups)
-        self.relu3 = nn.ReLU(inplace=True)
+        # conv3 -> norm3 (no relu here)
         self.conv3 = StdConv2d(
             mid_channels,
             out_channels,
@@ -81,6 +80,10 @@ class BottleneckV2(nn.Module):
             padding=0,
             bias=False
         )
+        self.norm3 = self._make_norm(out_channels, num_groups)
+
+        # Final ReLU after residual addition
+        self.relu = nn.ReLU(inplace=True)
 
         # Projection shortcut if dimensions change
         if stride != 1 or in_channels != out_channels:
@@ -92,8 +95,10 @@ class BottleneckV2(nn.Module):
                 padding=0,
                 bias=False
             )
+            self.gn_proj = self._make_norm(out_channels, num_groups)
         else:
             self.downsample = None
+            self.gn_proj = None
 
     def _make_norm(self, num_channels: int, num_groups: int) -> nn.GroupNorm:
         '''
@@ -110,7 +115,7 @@ class BottleneckV2(nn.Module):
         while num_channels % effective_num_groups != 0:
             effective_num_groups -= 1
 
-        return nn.GroupNorm(num_groups=effective_num_groups, num_channels=num_channels)
+        return nn.GroupNorm(num_groups=effective_num_groups, num_channels=num_channels, eps=1e-6)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         '''
@@ -125,62 +130,65 @@ class BottleneckV2(nn.Module):
         # Save input for residual connection
         residual = x
         
-        # First bottleneck: 1x1 reduction
+        # First bottleneck: conv1 -> norm1 -> relu1
+        x = self.conv1(x)
         x = self.norm1(x)
         x = self.relu1(x)
-        x = self.conv1(x)
 
-        # Second bottleneck: 3x3 spatial
+        # Second bottleneck: conv2 -> norm2 -> relu2
+        x = self.conv2(x)
         x = self.norm2(x)
         x = self.relu2(x)
-        x = self.conv2(x)
 
-        # Third bottleneck: 1x1 expansion
-        x = self.norm3(x)
-        x = self.relu3(x)
+        # Third bottleneck: conv3 -> norm3
         x = self.conv3(x)
+        x = self.norm3(x)
 
         # Apply projection to residual if needed
         if self.downsample is not None:
             residual = self.downsample(residual)
+            residual = self.gn_proj(residual)
 
-        # Add residual connection
+        # Add residual connection and apply final ReLU
         x = x + residual
+        x = self.relu(x)
 
         return x
 
 
-class ResNetV2(nn.Module):
+class ResNet(nn.Module):
     '''
-    ResNetV2 backbone for TransUNet hybrid architecture.
+    ResNet backbone for TransUNet hybrid architecture.
 
-    This implementation follows a modified ResNet50v2 with:
-    - Pre-activation design (norm + activation before convolution)
+    This implementation follows a modified ResNet50 with:
+    - Post-activation design (conv + norm + activation)
     - GroupNorm instead of BatchNorm for stability with small batch sizes
     - Weight standardization for better interaction with GroupNorm
-    - Skip connection extraction for decoder upsampling
+    - Skip connection extraction at multiple scales for decoder upsampling
+    - Root skip connection at 112x112 resolution
 
     Reference:
-        He, K., Zhang, X., Ren, S., & Sun, J. (2016, March 16).
-        Identity mappings in deep residual networks.
-        arXiv.org. https://arxiv.org/abs/1603.05027
+        He, K., Zhang, X., Ren, S., & Sun, J. (2015, December 10).
+        Deep residual learning for image recognition.
+        arXiv.org. https://arxiv.org/abs/1512.03385
 
     Architecture:
-    - Root block: 7x7 conv (224 -> 112) + 3x3 maxpool (112 -> 56)
-    - Block 1: n_blocks at 56x56 with 64 channels
-    - Block 2: n_blocks at 28x28 with 128 channels
-    - Block 3: n_blocks at 14x14 with 256 channels
-    - Output: 14x14 feature map + skip connections
+    - Root block: 7x7 conv + norm + relu (224 -> 112)
+    - MaxPool: 3x3 (112 -> 56, applied after collecting root skip)
+    - Block 1: n_blocks at 56x56 with 64 channels -> 256 output channels
+    - Block 2: n_blocks at 28x28 with 128 channels -> 512 output channels
+    - Block 3: n_blocks at 14x14 with 256 channels -> 1024 output channels
+    - Output: 14x14 feature map + skip connections from root and all blocks
 
     Attributes:
-        root: Initial convolution and pooling
-        block1, block2, block3: ResNet blocks
-        norm: Final normalization layer
+        root: Initial convolution and normalization
+        body: Sequential container with three ResNet blocks
+        skip_channels: List of channel dimensions for skip connections
     '''
 
     def __init__(self, config: ModelConfig):
         '''
-        Initialize ResNetV2 backbone.
+        Initialize ResNet backbone.
 
         Args:
             config: Model configuration containing ResNet parameters
@@ -200,9 +208,8 @@ class ResNetV2(nn.Module):
         base_channels = [64, 128, 256]
         channels = [c * width_factor for c in base_channels]
 
-        # Root block: initial convolution and pooling
+        # Root block: initial convolution (MaxPool applied separately in forward)
         # Conv: (B, 3, 224, 224) -> (B, 64*width_factor, 112, 112)
-        # MaxPool: (B, 64*width_factor, 112, 112) -> (B, 64*width_factor, 56, 56)
         self.root = nn.Sequential(OrderedDict([
             ('conv', StdConv2d(
                 in_channels=3,
@@ -212,9 +219,8 @@ class ResNetV2(nn.Module):
                 padding=3,
                 bias=False
             )),
-            ('gn', nn.GroupNorm(num_groups=min(32, channels[0]), num_channels=channels[0])),
-            ('relu', nn.ReLU(inplace=True)),
-            ('maxpool', nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+            ('gn', nn.GroupNorm(num_groups=min(32, channels[0]), num_channels=channels[0], eps=1e-6)),
+            ('relu', nn.ReLU(inplace=True))
         ]))
 
         self.body = nn.Sequential(OrderedDict([
@@ -229,7 +235,7 @@ class ResNetV2(nn.Module):
             # Block 2: 56x56 -> 28x28
             # Output channels: 128 * 4 = 512
             ('block2', self._make_stage(
-                in_channels=channels[0] * BottleneckV2.EXPANSION,
+                in_channels=channels[0] * Bottleneck.EXPANSION,
                 mid_channels=channels[1],
                 num_blocks=num_layers[1],
                 stride=2
@@ -237,26 +243,22 @@ class ResNetV2(nn.Module):
             # Block 3: 28x28 -> 14x14
             # Output channels: 256 * 4 = 1024
             ('block3', self._make_stage(
-                in_channels=channels[1] * BottleneckV2.EXPANSION,
+                in_channels=channels[1] * Bottleneck.EXPANSION,
                 mid_channels=channels[2],
                 num_blocks=num_layers[2],
                 stride=2
             ))
         ]))
 
-        # Final normalization (pre-activation style)
-        final_channels = channels[2] * BottleneckV2.EXPANSION
-        self.norm = nn.GroupNorm(num_groups=min(32, final_channels), num_channels=final_channels)
-        self.relu = nn.ReLU(inplace=True)
-
-        # Store output channels for skip connections
+        # Store output channels for skip connections (including root)
         self.skip_channels = [
-            channels[0] * BottleneckV2.EXPANSION,   # Stage 1: 256
-            channels[1] * BottleneckV2.EXPANSION,   # Stage 2: 512
-            channels[2] * BottleneckV2.EXPANSION    # Stage 3: 1024
+            channels[0],                            # Root: 64
+            channels[0] * Bottleneck.EXPANSION,     # Stage 1: 256
+            channels[1] * Bottleneck.EXPANSION,     # Stage 2: 512
+            channels[2] * Bottleneck.EXPANSION      # Stage 3: 1024
         ]
 
-        logger.info(f"Initialized ResNetV2 with {num_layers} layers, skip channels: {self.skip_channels}")
+        logger.info(f"Initialized ResNet with {num_layers} layers, skip channels: {self.skip_channels}")
 
     def _make_stage(self, in_channels: int, mid_channels: int, num_blocks: int, stride: int) -> nn.Sequential:
         '''
@@ -275,7 +277,7 @@ class ResNetV2(nn.Module):
 
         # First block (may downsample)
         layers.append(
-            BottleneckV2(
+            Bottleneck(
                 in_channels=in_channels,
                 mid_channels=mid_channels,
                 stride=stride
@@ -283,10 +285,10 @@ class ResNetV2(nn.Module):
         )
 
         # Remaining blocks (no downsampling)
-        out_channels = mid_channels * BottleneckV2.EXPANSION
+        out_channels = mid_channels * Bottleneck.EXPANSION
         for _ in range(1, num_blocks):
             layers.append(
-                BottleneckV2(
+                Bottleneck(
                     in_channels=out_channels,
                     mid_channels=mid_channels,
                     stride=1
@@ -297,7 +299,7 @@ class ResNetV2(nn.Module):
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         '''
-        Forward pass through ResNetV2 backbone.
+        Forward pass through ResNet backbone.
 
         Args:
             x: Input tensor of shape (B, 3, 224, 224)
@@ -306,12 +308,17 @@ class ResNetV2(nn.Module):
             Tuple of:
                 - Final feature map of shape (B, 1024, 14, 14)
                 - List of skip connection features from each stage:
-                    [block1: (B, 256, 56, 56),
+                    [root: (B, 64, 112, 112),
+                     block1: (B, 256, 56, 56),
                      block2: (B, 512, 28, 28),
                      block3: (B, 1024, 14, 14)]
         '''
-        # Root block: 224 -> 112 -> 56
-        x = self.root(x)            # (B, 64, 56, 56)
+        # Root block: 224 -> 112 (before MaxPool)
+        x = self.root(x)            # (B, 64, 112, 112)
+        x0 = x                      # Collect skip from root
+
+        # Apply MaxPool separately: 112 -> 56
+        x = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)(x)  # (B, 64, 56, 56)
 
         # Block 1: 56 -> 56
         x1 = self.body.block1(x)    # (B, 256, 56, 56)
@@ -322,11 +329,7 @@ class ResNetV2(nn.Module):
         # Block 3: 28 -> 14
         x3 = self.body.block3(x2)   # (B, 1024, 14, 14)
 
-        # Final normalization and activation
-        x_out = self.norm(x3)
-        x_out = self.relu(x_out)
+        # Collect skip connections (including root)
+        skip_connections = [x0, x1, x2, x3]
 
-        # Collect skip connections
-        skip_connections = [x1, x2, x3]
-
-        return x_out, skip_connections
+        return x3, skip_connections

@@ -47,6 +47,7 @@ class ModelConfig:
     resnet: Optional[ResNetConfig] = field(default_factory=ResNetConfig)
 
     # Decoder settings
+    head_channels: int = 512
     decoder_channels: Tuple[int, int, int, int] = (256, 128, 64, 16)
     skip_channels: List[int] = field(default_factory=lambda: [256, 512, 1024])
     n_skip: int = 3
@@ -96,6 +97,7 @@ class DataConfig:
     # Data properties
     image_size: int = 224
     num_classes: int = 9
+    class_names: Optional[List[str]] = None
 
     # Data loading
     batch_size: int = 8
@@ -125,7 +127,7 @@ class OptimizerConfig:
     name: str = 'sgd'                           # sgd, adam, adamw
     lr: float = 0.01
     momentum: float = 0.9                       # Only used for SGD optimizer
-    weight_decay: float = 0.0001
+    weight_decay: float = 1e-4
     betas: Tuple[float, float] = (0.9, 0.999)   # Only used for Adam and AdamW optimizers
 
 
@@ -161,12 +163,12 @@ class TrainingConfig:
     dice_weight: float = 0.5
     ce_weight: float = 0.5
     ignore_index: Optional[int] = None          # Class index to ignore in loss computation (e.g., background)
-    smooth: float = 1.0                         # Smoothing factor for Dice loss
+    smooth: float = 1e-6                        # Smoothing factor for Dice loss
     label_smoothing: float = 0.0                # Label smoothing factor for Cross-Entropy loss
     use_class_weights: bool = False             # Whether to use class weights for loss computation in imbalanced datasets
 
     # Metric parameters
-    epsilon: float = 1e-7                       # Small constant to avoid division by zero in metrics computation
+    epsilon: float = 1e-6                       # Small constant to avoid division by zero in metrics computation
 
     # Training settings
     use_amp: bool = True

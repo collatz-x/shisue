@@ -16,9 +16,19 @@ data:
   # Data properties
   image_size: 224
   num_classes: 9
+  class_names:
+    - Background
+    - Aorta
+    - Gallbladder
+    - Kidney (L)
+    - Kidney (R)
+    - Liver
+    - Pancreas
+    - Spleen
+    - Stomach
 
   # Data loading
-  batch_size: 24
+  batch_size: 8
   num_workers: 0
   pin_memory: false
 

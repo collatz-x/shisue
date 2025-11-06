@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 class StdConv2d(nn.Conv2d):
     '''
-    Standardized 2D convolution layer used in ResNetV2.
+    Standardized 2D convolution layer.
 
     Weight standardization normalizes the weights of convolutional layers,
     which works well with GroupNorm and improves training stability.
@@ -147,7 +147,7 @@ class PatchEmbeddings(nn.Module):
     Attributes:
         patch_size: Size of each extracted patch
         hidden_size: Dimension of embedding vectors
-        projection: Linear projection from flattened patch to embedding
+        projection: Conv2d layer for patch extraction and projection
     '''
 
     def __init__(self, patch_size: Tuple[int, int], in_channels: int, hidden_size: int):
@@ -165,11 +165,15 @@ class PatchEmbeddings(nn.Module):
         self.in_channels = in_channels
         self.hidden_size = hidden_size
 
-        # Calculate patch dimension
-        patch_dim = in_channels * patch_size[0] * patch_size[1]
-
-        # Linear projection from patch to embedding
-        self.projection = nn.Linear(patch_dim, hidden_size)
+        # Conv2d projection: extracts patches and projects in one operation
+        # kernel_size=stride=patch_size ensures non-overlapping patches
+        self.projection = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=hidden_size,
+            kernel_size=patch_size,
+            stride=patch_size,
+            bias=True
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         '''
@@ -187,22 +191,16 @@ class PatchEmbeddings(nn.Module):
         if height % self.patch_size[0] != 0 or width % self.patch_size[1] != 0:
             raise MRIScanException(f"Feature map size ({height}x{width}) must be divisible by patch size {self.patch_size}")
 
-        # Calculate number of patches
-        num_patches_h = height // self.patch_size[0]
-        num_patches_w = width // self.patch_size[1]
-        num_patches = num_patches_h * num_patches_w
-
-        # Reshape to patches: (B, C, H, W) -> (B, num_patches, C * patch_h * patch_w)
-        x = x.unfold(2, self.patch_size[0], self.patch_size[0])         # (B, C, num_patches_h, W, patch_h)
-        x = x.unfold(3, self.patch_size[1], self.patch_size[1])         # (B, C, num_patches_h, num_patches_w, patch_h, patch_w)
-        x = x.contiguous().view(batch_size, channels, num_patches, -1)  # (B, C, num_patches, patch_h * patch_w)
-        x = x.permute(0, 2, 1, 3)                                       # (B, num_patches, C, patch_h * patch_w)
-        x = x.contiguous().view(batch_size, num_patches, -1)            # (B, num_patches, C * patch_h * patch_w)
-
-        # Project to embedding dimension
-        embeddings = self.projection(x)                                # (B, num_patches, hidden_size)
+        # Apply convolution: (B, C, H, W) -> (B, hidden_size, H/patch_h, W/patch_w)
+        x = self.projection(x)
         
-        return embeddings
+        # Flatten spatial dimensions: (B, hidden_size, H', W') -> (B, hidden_size, num_patches)
+        x = x.flatten(2)
+        
+        # Transpose to sequence format: (B, hidden_size, num_patches) -> (B, num_patches, hidden_size)
+        x = x.transpose(-1, -2)
+        
+        return x
 
 
 class PositionalEmbeddings(nn.Module):
@@ -263,6 +261,8 @@ class MultiHeadSelfAttention(nn.Module):
         hidden_size: Total dimension (num_heads * head_dim)
         query, key, value: Linear projections for attention
         out_projection: Output projection after concatenating heads
+        attention_dropout: Dropout applied to attention weights
+        projection_dropout: Dropout applied to output projection
     '''
 
     def __init__(self, hidden_size: int, num_heads: int, attention_dropout_rate: float = 0.0):
@@ -294,6 +294,7 @@ class MultiHeadSelfAttention(nn.Module):
 
         # Dropout
         self.attention_dropout = nn.Dropout(attention_dropout_rate)
+        self.projection_dropout = nn.Dropout(attention_dropout_rate)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         '''
@@ -328,8 +329,9 @@ class MultiHeadSelfAttention(nn.Module):
         # Concatenate heads: (B, num_heads, num_patches, head_dim) -> (B, num_patches, hidden_size)
         attended = attended.transpose(1, 2).contiguous().view(batch_size, num_patches, -1)
 
-        # Output projection
+        # Output projection with dropout
         output = self.out_projection(attended)
+        output = self.projection_dropout(output)
 
         return output
 
@@ -452,71 +454,5 @@ class TransformerBlock(nn.Module):
         mlp_input = self.mlp_norm(x)
         mlp_output = self.mlp(mlp_input)
         x = x + mlp_output
-
-        return x
-
-
-class UpConvBlock(nn.Module):
-    '''
-    Upsampling block for decoder using transposed convolution.
-
-    Performs 2x upsampling followed by optional convolution block.
-    Used in the decoder to progressively increase spatial resolution.
-
-    Attributes:
-        upsample: Transposed convolution for 2x upsampling
-        conv: Optional convolutional block after upsampling
-    '''
-
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        num_groups: int = 32
-    ):
-        '''
-        Initialize upsampling block.
-
-        Args:
-            in_channels: Number of input channels
-            out_channels: Number of output channels
-            num_groups: Number of groups for GroupNorm
-        '''
-        super().__init__()
-
-        # Transposed convolution for 2x upsampling
-        self.upsample = nn.ConvTranspose2d(
-            in_channels,
-            out_channels,
-            kernel_size=2,
-            stride=2,
-            padding=0,
-            bias=False
-        )
-
-        # Conv block after upsampling
-        self.conv = ConvBlock(
-            in_channels=out_channels,
-            out_channels=out_channels,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            num_groups=num_groups,
-            use_weight_std=False,
-            activation='relu'
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        '''
-        Forward pass through upsampling block.
-        
-        Args:
-            x: Input tensor of shape (B, C, H, W)
-
-        Returns:
-            Upsampled tensor of shape (B, C, 2H, 2W)
-        '''
-        x = self.upsample(x)
-        x = self.conv(x)
 
         return x

@@ -8,7 +8,7 @@ import torch.nn as nn
 from scipy import ndimage
 
 from shisue.models.decoder import DecoderCUP
-from shisue.models.resnet import ResNetV2
+from shisue.models.resnet import ResNet
 from shisue.models.transformer import Transformer
 from shisue.utils.config import ModelConfig
 from shisue.utils.exceptions import MRIScanException
@@ -82,7 +82,7 @@ class TransUNet(nn.Module):
 
         # Initialize ResNet backbone
         logger.info(f"Building TransUNet model: {config.model_name}")
-        self.resnet = ResNetV2(config)
+        self.resnet = ResNet(config)
 
         # Get ResNet output channels (last stage)
         resnet_out_channels = self.resnet.skip_channels[-1]     # 1024 for ResNet50
@@ -264,17 +264,11 @@ class TransUNet(nn.Module):
                 # Load patch embedding weights
                 # For R50+ViT hybrid model: Conv2d(1024, 768, kernel_size=(1,1), stride=(1,1))
                 # TF format: [H, W, in_channels, out_channels] = [1, 1, 1024, 768]
-                # Our format: Linear(1024, 768) = (in_features, out_features)
                 if 'embedding/kernel' in weights and 'embedding/bias' in weights:
                     patch_weight = np2th(weights['embedding/kernel'], conv=True)
                     patch_bias = np2th(weights['embedding/bias'])
                     
                     # After np2th with conv=True: (out_channels, in_channels, H, W) = (768, 1024, 1, 1)
-                    # For Linear layer, we need: (out_features, in_features) = (768, 1024)
-                    # Simply squeeze the spatial dimensions (1, 1)
-                    if patch_weight.dim() == 4:
-                        patch_weight = patch_weight.squeeze(-1).squeeze(-1)  # (768, 1024)
-                    
                     self.transformer.patch_embeddings.projection.weight.copy_(patch_weight)
                     self.transformer.patch_embeddings.projection.bias.copy_(patch_bias)
                     logger.info("Loaded patch embedding weights")

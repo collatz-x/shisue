@@ -10,7 +10,7 @@ training:
     name: sgd                                 # sgd, adam, adamw
     lr: 0.01
     momentum: 0.9                             # Only used for SGD optimizer
-    weight_decay: 0.0001
+    weight_decay: 1e-4
     betas: [0.9, 0.999]                       # Only used for Adam and AdamW optimizers
 
   # Scheduler
@@ -26,12 +26,12 @@ training:
   dice_weight: 0.5
   ce_weight: 0.5
   ignore_index: null                          # Class index to ignore in loss computation (e.g., background)
-  smooth: 1.0                                 # Smoothing factor for Dice loss
+  smooth: 1e-6                                # Smoothing factor for Dice loss
   label_smoothing: 0.0                        # Label smoothing factor for Cross-Entropy loss
-  use_class_weights: false                    # Whether to use class weights for loss computation in imbalanced datasets
+  use_class_weights: true                     # Whether to use class weights for loss computation in imbalanced datasets
 
   # Metric parameters
-  epsilon: 1e-7                               # Small constant to avoid division by zero in metrics computation
+  epsilon: 1e-6                               # Small constant to avoid division by zero in metrics computation
 
   # Training settings
   use_amp: true

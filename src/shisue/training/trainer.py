@@ -1,6 +1,6 @@
 import random
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import numpy as np
 import torch
@@ -57,6 +57,7 @@ class Trainer:
         train_loader: DataLoader,
         val_loader: DataLoader,
         class_weights: Optional[torch.Tensor] = None,
+        class_names: Optional[List[str]] = None
     ):
         '''
         Initialize Trainer.
@@ -72,6 +73,7 @@ class Trainer:
         self.config = config
         self.train_loader = train_loader
         self.val_loader = val_loader
+        self.class_names = class_names
 
         # Set device with priority: MPS → CUDA → CPU
         self.device = self._get_device()
@@ -81,11 +83,10 @@ class Trainer:
         self.model = self.model.to(self.device)
 
         # Move class weights to device if provided
-        if class_weights is not None:
-            class_weights = class_weights.to(self.device)
+        self.class_weights = class_weights.to(self.device) if class_weights is not None else None
 
         # Initialize loss function
-        self.criterion = build_loss(config=config, class_weights=class_weights)
+        self.criterion = build_loss(config=self.config, class_weights=self.class_weights)
 
         # Initialize optimizer
         self.optimizer = self._build_optimizer()
@@ -122,7 +123,7 @@ class Trainer:
                 logger.warning(f"AMP is not supported on {self.device.type}. Falling back to FP32")
 
         # Initialize metrics tracker
-        self.metrics_tracker = MetricsTracker(config=config)
+        self.metrics_tracker = MetricsTracker(config=self.config)
 
         # Setup directories
         self.checkpoint_dir = Path(config.checkpoint_dir)
@@ -510,10 +511,10 @@ class Trainer:
             )
 
             # TensorBoard logging - training
-            self.writer.add_scalar('Loss/train', train_metrics['loss'], epoch)
-            self.writer.add_scalar('Metrics/train_iou', train_metrics['mean_iou'], epoch)
-            self.writer.add_scalar('Metrics/train_dice', train_metrics['mean_dice'], epoch)
-            self.writer.add_scalar('Metrics/train_pixel_accuracy', train_metrics['pixel_accuracy'], epoch)
+            self.writer.add_scalar('Loss/train', float(train_metrics['loss']), epoch)
+            self.writer.add_scalar('Metrics/train_iou', float(train_metrics['mean_iou']), epoch)
+            self.writer.add_scalar('Metrics/train_dice', float(train_metrics['mean_dice']), epoch)
+            self.writer.add_scalar('Metrics/train_pixel_accuracy', float(train_metrics['pixel_accuracy']), epoch)
             self.writer.add_scalar('Learning_Rate', self.optimizer.param_groups[0]['lr'], epoch)
 
             # Validation
@@ -529,10 +530,11 @@ class Trainer:
                 )
 
                 # TensorBoard logging - validation
-                self.writer.add_scalar('Loss/val', val_metrics['loss'], epoch)
-                self.writer.add_scalar('Metrics/val_iou', val_metrics['mean_iou'], epoch)
-                self.writer.add_scalar('Metrics/val_dice', val_metrics['mean_dice'], epoch)
-                self.writer.add_scalar('Metrics/val_pixel_accuracy', val_metrics['pixel_accuracy'], epoch)
+                self.writer.add_scalar('Loss/val', float(val_metrics['loss']), epoch)
+                self.writer.add_scalar('Metrics/val_iou', float(val_metrics['mean_iou']), epoch)
+                self.writer.add_scalar('Metrics/val_dice', float(val_metrics['mean_dice']), epoch)
+                self.writer.add_scalar('Metrics/val_pixel_accuracy', float(val_metrics['pixel_accuracy']), epoch)
+                self.writer.flush()
 
                 # Check if this is the best model
                 current_metric = val_metrics['mean_dice']   # Use Dice as primary metric
@@ -544,6 +546,12 @@ class Trainer:
                     # Save best checkpoint
                     if self.config.save_best:
                         best_path = self.checkpoint_dir / 'best_model.pth'
+
+                        # Compute per-class metrics
+                        per_class_metrics = self.metrics_tracker.compute_per_class()
+                        val_metrics['dice_per_class'] = per_class_metrics['dice_per_class'].tolist()
+                        val_metrics['iou_per_class'] = per_class_metrics['iou_per_class'].tolist()
+
                         self.save_checkpoint(best_path, val_metrics)
                         logger.info(f"New best model saved with Dice: {self.best_metric:.4f}")
 
@@ -573,6 +581,41 @@ class Trainer:
         logger.info("=" * 80)
         logger.info("Training completed successfully")
         logger.info(f"Best validation Dice: {self.best_metric:.4f}")
+
+        # Display per-class metrics from best model
+        if self.config.save_best:
+            best_path = self.checkpoint_dir / 'best_model.pth'
+            
+            if best_path.exists():
+                logger.info("-" * 80)
+                logger.info("Final per-class metrics (from best model):")
+                
+                # Load checkpoint to get saved per-class metrics
+                checkpoint = torch.load(best_path, map_location=self.device, weights_only=False)
+                
+                if 'metrics' in checkpoint and 'dice_per_class' in checkpoint['metrics']:
+                    dice_per_class = checkpoint['metrics']['dice_per_class']
+                    iou_per_class = checkpoint['metrics']['iou_per_class']
+                    
+                    for cls in range(self.config.num_classes):
+                        if cls != self.config.ignore_index:
+                            # Get class name or fallback to index
+                            class_name = (
+                                self.class_names[cls] 
+                                if self.class_names and cls < len(self.class_names) 
+                                else f"Class {cls}"
+                            )
+                            
+                            logger.info(
+                                f"  {class_name}: "
+                                f"Dice={dice_per_class[cls]:.4f}, "
+                                f"IoU={iou_per_class[cls]:.4f}"
+                            )
+                else:
+                    logger.warning("Per-class metrics not found in best checkpoint")
+            else:
+                logger.warning(f"Best model checkpoint not found at {best_path}")
+
         logger.info("=" * 80)
 
         # Close TensorBoard writer
